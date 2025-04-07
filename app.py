@@ -1,11 +1,9 @@
 import streamlit as st
 import requests
-import pandas as pd
-import altair as alt
-from datetime import datetime
 
 # FastAPI endpoint for generating report
 API_URL = "https://fastapi-app-1057230376331.us-central1.run.app"
+
 
 # Streamlit UI setup with custom style
 st.set_page_config(page_title="NVIDIA Research Assistant", page_icon=":bar_chart:", layout="centered")
@@ -60,19 +58,6 @@ st.markdown("""
             font-size: 14px;
             color: #888;
         }
-        .chat-history {
-            padding: 10px;
-            background-color: #f7f7f7;
-            border-radius: 5px;
-            margin-top: 20px;
-            max-width: 800px;
-            margin: 0 auto;
-            max-height: 300px;
-            overflow-y: scroll;
-        }
-        .chat-message {
-            margin-bottom: 10px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -83,73 +68,63 @@ with st.container():
 
     st.subheader("Research Query")
     query = st.text_area("Enter your research query", height=150)
-    year = st.selectbox("Select Year", [2021, 2022, 2023, 2024, 2025], key="year")
+    year = st.selectbox("Select Year", [2021,2022,2023, 2024, 2025], key="year")
     quarter = st.selectbox("Select Quarter", [1, 2, 3, 4], key="quarter")
     agent = st.selectbox("Select Agent", ["Snowflake Agent", "RAG Agent", "Web Search Agent", "All Agents"], key="agent")
 
-    # Initialize chat history
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+agent_mapping = {
+    "Snowflake Agent": "snowflake_agent",
+    "RAG Agent": "rag_search",
+    "Web Search Agent": "web_search",
+    "All Agents": "all_agents"
+}
 
-    # Function to update chat history
-    def update_chat_history(query, response):
-        st.session_state.chat_history.append({"message": query, "response": response})
+backend_agent = agent_mapping.get(agent, None)
 
-    # Display chat history
-    if st.session_state.chat_history:
-        st.write("### Chat History")
-        with st.container():
-            for chat in st.session_state.chat_history:
-                st.markdown(f"**Query:** {chat['message']}")
-                st.markdown(f"**Response:** {chat['response']}")
-                st.markdown("---")
 
-    if st.button("Generate Report", use_container_width=True):
-        payload = {
-            "query": query,
-            "year": year,
-            "quarter": quarter,
-            "agent": agent
-        }
-        url = f"{API_URL}/generate_report"
-        response = requests.post(url, json=payload)
+if st.button("Generate Report", use_container_width=True):
+    payload = {
+        "query": query,
+        "year": year,
+        "quarter": quarter,
+        "agent_name": backend_agent  
+    }
+
+    response = requests.post(API_URL, json=payload)
+
+    if response.status_code == 200:
+        data = response.json()
         
-        if response.status_code == 200:
-            data = response.json()
 
-            # Add the query and response to the chat history
-            report = data.get("report", "No report generated.")
-            update_chat_history(query, report)
+        st.header("Generated Research Report")
 
-            # Display the generated report
-            st.header("Generated Research Report")
-            st.write(report)
+        # Show full research report (if exists)
+        if data.get("report"):
+            st.markdown("### 📄 Report")
+            st.markdown(data["report"], unsafe_allow_html=True)
 
-            # Display the valuation charts if available
-            if data.get("chart_data"):
-                st.write("### Charts:")
-                df_chart = pd.DataFrame(data["chart_data"])
-                chart = alt.Chart(df_chart).mark_bar().encode(
-                    x="metric:N",
-                    y="value_num:Q",
-                    tooltip=["metric", "value_num"]
-                ).properties(
-                    width=600,
-                    height=400,
-                    title="Valuation Metrics"
-                )
-                st.altair_chart(chart, use_container_width=True)
 
-            # Display web insights and links
-            if data.get("web_insights"):
-                st.write("### Web Insights:")
-                st.write(data.get("web_insights"))
-            if data.get("web_links"):
-                st.write("### Source Links:")
-                for link in data.get("web_links"):
-                    st.markdown(f"[{link}]({link})")
+        if data.get("charts"):
+            st.markdown("### 📊 Chart Data")
+            st.write(data["charts"])
 
-        else:
-            st.error("Failed to generate report. Please try again.")
+        if data.get("chart_image"):
+            st.markdown("### 📈 Financial Metrics Chart")
+            st.image(data["chart_image"])
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        # Show web insights if available (Web Agent / All Agents)
+        if data.get("web_insights"):
+            st.markdown("### 🌐 Web Insights")
+            st.write(data["web_insights"])
+
+        if data.get("web_links"):
+            st.markdown("### 🔗 Sources")
+            for link in data["web_links"]:
+                st.markdown(f"[{link}]({link})")
+
+        # Catch fallback
+        if not data.get("report") and not data.get("charts"):
+            st.warning("No report or charts found.")
+
+    else:
+        st.error("❌ Failed to generate report. Please try again.")
